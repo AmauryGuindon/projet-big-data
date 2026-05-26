@@ -1,0 +1,77 @@
+services:
+  cassandra:
+    image: cassandra:4.1
+    container_name: bd_cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: bd_cassandra_init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./cassandra:/init:ro
+    command: >
+      sh -c "cqlsh cassandra 9042 -f /init/init.cql &&
+             echo 'Cassandra schema initialized.'"
+    restart: "no"
+
+  minio:
+    image: minio/minio:latest
+    container_name: bd_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ingestor:
+    build:
+      context: ./ingestor
+    container_name: bd_ingestor
+    depends_on:
+      cassandra-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    environment:
+      CASSANDRA_HOST: cassandra
+      CASSANDRA_PORT: "9042"
+      CASSANDRA_KEYSPACE: bigdata_project
+      # Par defaut : MinIO local. Remplacer par vos credentials AWS pour utiliser S3 reel.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-bigdata-raw}
+      # Vide = AWS reel. http://minio:9000 = MinIO local (defaut).
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_CREATE_BUCKET: ${S3_CREATE_BUCKET:-true}
+      CSV_LIMIT: ${CSV_LIMIT:-10000}
+      JSON_LIMIT: ${JSON_LIMIT:-5000}
+      IMAGE_LIMIT: ${IMAGE_LIMIT:-500}
+    volumes:
+      - ./data:/data:ro
+    restart: "no"
+
+volumes:
+  cassandra_data:
+  minio_data:
