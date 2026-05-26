@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Office temp lock files
+~$*.docx
+~$*.pptx
+~$*.xlsx
+
+# Environnement
+.env
+*.local
